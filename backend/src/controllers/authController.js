@@ -1,0 +1,134 @@
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const db = require('../config/db');
+
+exports.login = async (req, res) => {
+  const { username, password } = req.body;
+
+  try {
+    // 1. Tìm tài khoản trong Database kèm thông tin Nhân viên và Vai trò
+    const query = `
+      SELECT tk.MANHANVIEN, tk.USERNAME, tk.PASSWORDHASH, tk.TRANG_THAI as TK_TRANGTHAI,
+             nv.HOTEN, nv.TRANGTHAI as NV_TRANGTHAI,
+             vt.MAVAITRO, vt.TENVAITRO, vt.QUYENHAN
+      FROM TAI_KHOAN_NHAN_VIEN tk
+      JOIN NHANVIEN nv ON tk.MANHANVIEN = nv.MANHANVIEN
+      JOIN PHAN_QUYEN_NHAN_VIEN pq ON nv.MANHANVIEN = pq.MANHANVIEN
+      JOIN VAI_TRO vt ON pq.MAVAITRO = vt.MAVAITRO
+      WHERE tk.USERNAME = $1
+    `;
+    const result = await db.query(query, [username]);
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Tên đăng nhập không tồn tại!' });
+    }
+
+    const user = result.rows[0];
+
+    // 2. Kiểm tra trạng thái tài khoản và nhân viên
+    if (!user.tk_trangthai || user.nv_trangthai !== 'Đang làm việc') {
+      return res.status(403).json({ error: 'Tài khoản hoặc nhân viên đã bị khóa!' });
+    }
+
+    // 3. So sánh mật khẩu (Password người dùng nhập vs Hash trong Database)
+    const isMatch = await bcrypt.compare(password, user.passwordhash);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Mật khẩu không chính xác!' });
+    }
+
+    // 4. Tạo JWT Token (thẻ thông hành) chứa ID và Quyền hạn, hạn dùng 1 ngày
+    const payload = {
+      maNhanVien: user.manhanvien,
+      hoTen: user.hoten,
+      tenVaiTro: user.tenvaitro,
+      quyenHan: user.quyenhan
+    };
+
+    // Lưu ý: Chuỗi bí mật 'my_super_secret_jwt_key' nên được đưa vào file .env sau này
+    const token = jwt.sign(payload, process.env.JWT_SECRET || 'my_super_secret_jwt_key', { 
+        expiresIn: '1d' 
+    });
+
+    // 5. Trả về Token và thông tin cơ bản cho Frontend
+    res.json({
+      message: 'Đăng nhập thành công',
+      token: token,
+      user: payload
+    });
+
+  } catch (err) {
+    console.error("Lỗi đăng nhập:", err);
+    res.status(500).json({ error: 'Lỗi server khi đăng nhập' });
+  }
+};
+
+exports.getAllEmployees = async (req, res) => {
+  try {
+    const query = `
+      SELECT nv.MANHANVIEN, nv.HOTEN, nv.SDT, nv.EMAIL, nv.TRANGTHAI, 
+             vt.TENVAITRO, tk.USERNAME
+      FROM NHANVIEN nv
+      JOIN TAI_KHOAN_NHAN_VIEN tk ON nv.MANHANVIEN = tk.MANHANVIEN
+      JOIN PHAN_QUYEN_NHAN_VIEN pq ON nv.MANHANVIEN = pq.MANHANVIEN
+      JOIN VAI_TRO vt ON pq.MAVAITRO = vt.MAVAITRO
+      ORDER BY nv.MANHANVIEN DESC
+    `;
+    const result = await db.query(query);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Lỗi lấy danh sách nhân viên' });
+  }
+};
+
+// Thêm hàm này vào dưới cùng của authController.js
+exports.register = async (req, res) => {
+  const { hoten, sdt, email, username, password, maVaiTro } = req.body;
+
+  try {
+    // 1. Tự động mã hóa mật khẩu ngay trong code
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    // 2. Bắt đầu Transaction (Đảm bảo an toàn khi ghi vào nhiều bảng)
+    await db.query('BEGIN');
+
+    // Bước 2.1: Tạo thông tin nhân viên
+    const insertNhanVienQuery = `
+      INSERT INTO NHANVIEN (HOTEN, SDT, EMAIL, NGAYVAOLAM, TRANGTHAI) 
+      VALUES ($1, $2, $3, CURRENT_DATE, 'Đang làm việc') RETURNING MANHANVIEN
+    `;
+    const nvResult = await db.query(insertNhanVienQuery, [hoten, sdt, email]);
+    const maNhanVienMoi = nvResult.rows[0].manhanvien;
+
+    // Bước 2.2: Tạo tài khoản với mật khẩu đã mã hóa
+    const insertTaiKhoanQuery = `
+      INSERT INTO TAI_KHOAN_NHAN_VIEN (MANHANVIEN, USERNAME, PASSWORDHASH) 
+      VALUES ($1, $2, $3)
+    `;
+    await db.query(insertTaiKhoanQuery, [maNhanVienMoi, username, passwordHash]);
+
+    // Bước 2.3: Phân quyền cho nhân viên đó
+    const insertPhanQuyenQuery = `
+      INSERT INTO PHAN_QUYEN_NHAN_VIEN (MAVAITRO, MANHANVIEN) 
+      VALUES ($1, $2)
+    `;
+    await db.query(insertPhanQuyenQuery, [maVaiTro, maNhanVienMoi]);
+
+    // 3. Nếu mọi thứ suôn sẻ, lưu tất cả vào Database
+    await db.query('COMMIT');
+
+    res.status(201).json({ message: 'Tạo tài khoản nhân viên thành công!' });
+
+  } catch (err) {
+    // Nếu có lỗi ở bất kỳ bước nào, hủy bỏ toàn bộ thao tác
+    await db.query('ROLLBACK');
+    console.error("Lỗi tạo tài khoản:", err);
+    
+    // Bắt lỗi trùng username (Mã lỗi 23505 của PostgreSQL)
+    if (err.code === '23505') {
+      return res.status(400).json({ error: 'Tên đăng nhập này đã tồn tại!' });
+    }
+    res.status(500).json({ error: 'Lỗi server khi tạo nhân viên' });
+  }
+};
