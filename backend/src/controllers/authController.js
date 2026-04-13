@@ -65,8 +65,8 @@ exports.login = async (req, res) => {
 exports.getAllEmployees = async (req, res) => {
   try {
     const query = `
-      SELECT nv.MANHANVIEN, nv.HOTEN, nv.SDT, nv.EMAIL, nv.TRANGTHAI, 
-             vt.TENVAITRO, tk.USERNAME
+      SELECT nv.MANHANVIEN, nv.HOTEN, nv.SDT, nv.EMAIL, nv.TRANGTHAI, nv.NGAYVAOLAM,
+             vt.MAVAITRO, vt.TENVAITRO, tk.USERNAME
       FROM NHANVIEN nv
       JOIN TAI_KHOAN_NHAN_VIEN tk ON nv.MANHANVIEN = tk.MANHANVIEN
       JOIN PHAN_QUYEN_NHAN_VIEN pq ON nv.MANHANVIEN = pq.MANHANVIEN
@@ -130,5 +130,62 @@ exports.register = async (req, res) => {
       return res.status(400).json({ error: 'Tên đăng nhập này đã tồn tại!' });
     }
     res.status(500).json({ error: 'Lỗi server khi tạo nhân viên' });
+  }
+};
+
+// Cập nhật thông tin nhân viên
+exports.updateEmployee = async (req, res) => {
+  const { id } = req.params; // Lấy ID từ URL
+  const { hoten, sdt, email, maVaiTro, trangthai } = req.body;
+
+  try {
+    await db.query('BEGIN');
+
+    // 1. Cập nhật thông tin cơ bản
+    await db.query(
+      `UPDATE NHANVIEN SET HOTEN = $1, SDT = $2, EMAIL = $3, TRANGTHAI = $4 WHERE MANHANVIEN = $5`,
+      [hoten, sdt, email, trangthai, id]
+    );
+
+    // 2. Cập nhật vai trò
+    await db.query(
+      `UPDATE PHAN_QUYEN_NHAN_VIEN SET MAVAITRO = $1 WHERE MANHANVIEN = $2`,
+      [maVaiTro, id]
+    );
+
+    // 3. Nếu trạng thái là 'Đã nghỉ việc', tự động khóa tài khoản
+    if (trangthai === 'Đã nghỉ việc') {
+      await db.query(`UPDATE TAI_KHOAN_NHAN_VIEN SET TRANG_THAI = false WHERE MANHANVIEN = $1`, [id]);
+    } else {
+      await db.query(`UPDATE TAI_KHOAN_NHAN_VIEN SET TRANG_THAI = true WHERE MANHANVIEN = $1`, [id]);
+    }
+
+    await db.query('COMMIT');
+    res.json({ message: 'Cập nhật thông tin thành công!' });
+  } catch (err) {
+    await db.query('ROLLBACK');
+    console.error("Lỗi cập nhật nhân viên:", err);
+    res.status(500).json({ error: 'Lỗi server khi cập nhật' });
+  }
+};
+
+// Xóa mềm nhân viên (Chuyển trạng thái)
+exports.softDeleteEmployee = async (req, res) => {
+  const { id } = req.params;
+  try {
+    await db.query('BEGIN');
+    
+    // Cập nhật trạng thái NV thành "Đã nghỉ việc"
+    await db.query(`UPDATE NHANVIEN SET TRANGTHAI = 'Đã nghỉ việc' WHERE MANHANVIEN = $1`, [id]);
+    
+    // Khóa tài khoản
+    await db.query(`UPDATE TAI_KHOAN_NHAN_VIEN SET TRANG_THAI = false WHERE MANHANVIEN = $1`, [id]);
+    
+    await db.query('COMMIT');
+    res.json({ message: 'Đã chuyển nhân viên sang trạng thái Nghỉ việc!' });
+  } catch (err) {
+    await db.query('ROLLBACK');
+    console.error("Lỗi xóa mềm:", err);
+    res.status(500).json({ error: 'Lỗi server khi xóa mềm' });
   }
 };

@@ -63,30 +63,51 @@ exports.findCustomer = async (req, res) => {
 };
 
 // 3. HOLD ĐƠN HÀNG (Lưu tạm vào DON_HANG)
+// 3. HOLD ĐƠN HÀNG (Lưu tạm hoặc Cập nhật đơn đang Hold)
 exports.holdOrder = async (req, res) => {
-  const { maDoiTac, cartItems, tongTien } = req.body;
+  // Nhận thêm maDonHangHold từ Frontend
+  const { maDoiTac, cartItems, tongTien, maDonHangHold } = req.body;
   if (!maDoiTac) return res.status(400).json({ error: 'Bắt buộc phải có khách hàng để Hold đơn!' });
 
   try {
     await db.query('BEGIN');
-    const donHangRes = await db.query(
-      `INSERT INTO DON_HANG (MADOITAC, TONGTIEN, TRANGTHAI) VALUES ($1, $2, 'Hold') RETURNING MADONHANG`,
-      [maDoiTac, tongTien]
-    );
-    const maDonHang = donHangRes.rows[0].madonhang;
+    let maDonHang = maDonHangHold;
 
+    // KIỂM TRA: NẾU LÀ ĐƠN CŨ THÌ CẬP NHẬT, NẾU LÀ ĐƠN MỚI THÌ TẠO MỚI
+    if (maDonHangHold) {
+      // 1. Cập nhật lại tổng tiền và khách hàng (nhỡ họ đổi khách) của đơn cũ
+      await db.query(
+        `UPDATE DON_HANG SET TONGTIEN = $1, MADOITAC = $2 WHERE MADONHANG = $3`,
+        [tongTien, maDoiTac, maDonHangHold]
+      );
+      
+      // 2. Xóa sạch chi tiết đơn hàng cũ để chuẩn bị thêm giỏ hàng mới
+      // (Cách này nhanh và sạch hơn việc ngồi đếm xem sản phẩm nào mới, sản phẩm nào cũ)
+      await db.query(`DELETE FROM CHI_TIET_DON_HANG WHERE MADONHANG = $1`, [maDonHangHold]);
+      
+    } else {
+      // Logic cũ: Tạo đơn mới hoàn toàn
+      const donHangRes = await db.query(
+        `INSERT INTO DON_HANG (MADOITAC, TONGTIEN, TRANGTHAI) VALUES ($1, $2, 'Hold') RETURNING MADONHANG`,
+        [maDoiTac, tongTien]
+      );
+      maDonHang = donHangRes.rows[0].madonhang;
+    }
+
+    // 3. Insert lại toàn bộ chi tiết giỏ hàng hiện tại (Dùng chung cho cả 2 trường hợp)
     for (let item of cartItems) {
-      // Sửa lại VALUES thành $5 và đưa phép tính vào mảng tham số
       await db.query(
         `INSERT INTO CHI_TIET_DON_HANG (MADONHANG, MASANPHAM, SOLUONG, DONGIA, THANHTIEN) 
          VALUES ($1, $2, $3, $4, $5)`,
         [maDonHang, item.masanpham, item.soluong, item.gianiemyet, item.soluong * item.gianiemyet]
       );
     }
+    
     await db.query('COMMIT');
-    res.json({ message: 'Đã treo đơn thành công!', maDonHang });
+    res.json({ message: maDonHangHold ? 'Đã cập nhật đơn treo!' : 'Đã treo đơn thành công!', maDonHang });
   } catch (err) {
     await db.query('ROLLBACK');
+    console.error(err.message);
     res.status(500).json({ error: 'Lỗi Hold đơn' });
   }
 };

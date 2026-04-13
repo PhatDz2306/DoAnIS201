@@ -113,6 +113,7 @@ export default function PosManager() {
   // --- CÁC NÚT CHỨC NĂNG CHÍNH ---
 
   // 1. HOLD: Lưu tạm hóa đơn
+  // 1. HOLD: Lưu tạm hóa đơn
   const handleHoldOrder = async () => {
     if (cart.length === 0) return alert('Giỏ hàng trống!');
     if (!customer) return alert("Vui lòng chọn khách hàng trước khi Hold đơn!");
@@ -124,11 +125,12 @@ export default function PosManager() {
         body: JSON.stringify({ 
           maDoiTac: customer.madoitac, 
           cartItems: cart, 
-          tongTien: totalAmount 
+          tongTien: totalAmount,
+          maDonHangHold: holdOrderId // ---> THÊM DÒNG NÀY ĐỂ BACKEND BIẾT LÀ ĐƠN CŨ
         })
       });
       if (res.ok) {
-        alert('Đã lưu đơn hàng (Hold) thành công!');
+        alert(holdOrderId ? 'Đã cập nhật đơn treo thành công!' : 'Đã lưu đơn hàng (Hold) thành công!');
         resetPos();
       }
     } catch (err) {
