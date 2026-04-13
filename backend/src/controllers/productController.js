@@ -1,9 +1,16 @@
 const db = require('../config/db');
 
 // 1. Lấy danh sách tất cả sản phẩm
+// Thay thế hàm này trong file: backend/src/controllers/productController.js
 exports.getAllProducts = async (req, res) => {
   try {
-    const result = await db.query('SELECT * FROM SAN_PHAM ORDER BY MASANPHAM DESC');
+    const query = `
+      SELECT s.*, COALESCE(t.SOLUONGTON, 0) as SOLUONGTON 
+      FROM SAN_PHAM s 
+      LEFT JOIN TON_KHO t ON s.MASANPHAM = t.MASANPHAM 
+      ORDER BY s.MASANPHAM DESC
+    `;
+    const result = await db.query(query);
     res.json(result.rows);
   } catch (err) {
     console.error(err.message);
@@ -11,13 +18,17 @@ exports.getAllProducts = async (req, res) => {
   }
 };
 
-// 2. Thêm sản phẩm mới
+// 2. Thêm sản phẩm mới (Thêm xử lý HINHANH)
 exports.createProduct = async (req, res) => {
-  const { tenSanPham, loaiSanPham, donViTinh, giaNiemYet, coTheMua, coTheBan } = req.body;
+  const { tenSanPham, loaiSanPham, donViTinh, giaNiemYet, coTheMua, coTheBan, hinhAnh } = req.body;
+  
+  // Xử lý nếu ảnh rỗng thì set null để DB nhận giá trị NULL thay vì chuỗi rỗng
+  const imgUrl = hinhAnh && hinhAnh.trim() !== '' ? hinhAnh : null;
+
   try {
     const newProduct = await db.query(
-      'INSERT INTO SAN_PHAM (TENSANPHAM, LOAISANPHAM, DONVITINH, GIANIEMYET, COTHEMUA, COTHEBAN) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-      [tenSanPham, loaiSanPham, donViTinh, giaNiemYet, coTheMua, coTheBan]
+      'INSERT INTO SAN_PHAM (TENSANPHAM, LOAISANPHAM, DONVITINH, GIANIEMYET, COTHEMUA, COTHEBAN, HINHANH) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+      [tenSanPham, loaiSanPham, donViTinh, giaNiemYet, coTheMua, coTheBan, imgUrl]
     );
     res.json(newProduct.rows[0]);
   } catch (err) {
@@ -26,14 +37,17 @@ exports.createProduct = async (req, res) => {
   }
 };
 
-// 3. Cập nhật thông tin sản phẩm (Sửa tên, giá...)
+// 3. Cập nhật thông tin sản phẩm (Thêm xử lý HINHANH)
 exports.updateProduct = async (req, res) => {
   const { id } = req.params;
-  const { tenSanPham, loaiSanPham, donViTinh, giaNiemYet, coTheMua, coTheBan } = req.body;
+  const { tenSanPham, loaiSanPham, donViTinh, giaNiemYet, coTheMua, coTheBan, hinhAnh } = req.body;
+  
+  const imgUrl = hinhAnh && hinhAnh.trim() !== '' ? hinhAnh : null;
+
   try {
     const updatedProduct = await db.query(
-      'UPDATE SAN_PHAM SET TENSANPHAM = $1, LOAISANPHAM = $2, DONVITINH = $3, GIANIEMYET = $4, COTHEMUA = $5, COTHEBAN = $6 WHERE MASANPHAM = $7 RETURNING *',
-      [tenSanPham, loaiSanPham, donViTinh, giaNiemYet, coTheMua, coTheBan, id]
+      'UPDATE SAN_PHAM SET TENSANPHAM = $1, LOAISANPHAM = $2, DONVITINH = $3, GIANIEMYET = $4, COTHEMUA = $5, COTHEBAN = $6, HINHANH = $7 WHERE MASANPHAM = $8 RETURNING *',
+      [tenSanPham, loaiSanPham, donViTinh, giaNiemYet, coTheMua, coTheBan, imgUrl, id]
     );
     res.json(updatedProduct.rows[0]);
   } catch (err) {
@@ -43,7 +57,6 @@ exports.updateProduct = async (req, res) => {
 };
 
 // 4. "Xóa mềm" - Ngừng kinh doanh sản phẩm
-// Giữ nguyên Data trong DB, chỉ chuyển trạng thái thành false
 exports.deactivateProduct = async (req, res) => {
   const { id } = req.params;
   try {

@@ -66,10 +66,18 @@ export default function InventoryManager() {
   };
 
   // --- LỌC DANH SÁCH TÌM KIẾM ---
-  const filteredInventory = inventory.filter(item => 
-    item.tensanpham.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    item.masanpham.toString().includes(searchQuery)
-  );
+  // Lọc danh sách (vừa tìm kiếm, vừa loại bỏ hàng cấm nhập)
+  const filteredInventory = inventory.filter(item => {
+    // 1. Điều kiện tiên quyết: Phải được phép mua
+    if (!item.cothemua) return false; 
+    
+    // 2. Nếu không gõ gì vào ô tìm kiếm -> hiện tất cả hàng được phép mua
+    if (!searchQuery) return true;
+    
+    // 3. Nếu có gõ tìm kiếm -> lọc theo tên hoặc mã
+    return item.tensanpham.toLowerCase().includes(searchQuery.toLowerCase()) || 
+           item.masanpham.toString().includes(searchQuery);
+  });
 
   const handleSelectProduct = (product) => {
     setImportForm({ ...importForm, masanpham: product.masanpham });
@@ -168,7 +176,7 @@ export default function InventoryManager() {
                 {showDropdown && (
                   <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
                     {filteredInventory.length > 0 ? (
-                      filteredInventory.map(item => (
+                      filteredInventory.filter(item => item.cothemua).map(item => (
                         <div 
                           key={item.masanpham}
                           onClick={() => handleSelectProduct(item)}

@@ -1,10 +1,11 @@
 const db = require('../config/db');
 
 // 1. Xem danh sách tồn kho (Cập nhật: Lấy thêm Hình ảnh và Loại sản phẩm)
+// Thay thế hàm này trong file: backend/src/controllers/inventoryController.js
 exports.getInventory = async (req, res) => {
   try {
     const query = `
-      SELECT s.MASANPHAM, s.TENSANPHAM, s.LOAISANPHAM, s.DONVITINH, s.GIANIEMYET, s.HINHANH, 
+      SELECT s.MASANPHAM, s.TENSANPHAM, s.LOAISANPHAM, s.DONVITINH, s.GIANIEMYET, s.HINHANH, s.COTHEMUA, 
              COALESCE(t.SOLUONGTON, 0) as SOLUONGTON 
       FROM SAN_PHAM s 
       LEFT JOIN TON_KHO t ON s.MASANPHAM = t.MASANPHAM 
