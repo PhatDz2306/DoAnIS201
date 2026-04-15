@@ -29,10 +29,32 @@ function App() {
     return <Login />;
   }
 
-  // --- HÀM KIỂM TRA QUYỀN HẠN ---
+  // --- HÀM KIỂM TRA QUYỀN HẠN (Đã được nâng cấp) ---
   const hasPermission = (permission) => {
+    // 1. Nếu không có user hoặc không có trường quyenHan thì chặn luôn
     if (!user || !user.quyenHan) return false;
-    return user.quyenHan.includes('ALL') || user.quyenHan.includes(permission);
+
+    // 2. Chuẩn hóa quyenHan về dạng Mảng (Array) để gọi .includes() an toàn
+    let permissions = [];
+    
+    if (Array.isArray(user.quyenHan)) {
+      // Trường hợp chuẩn: quyenHan đã là mảng
+      permissions = user.quyenHan; 
+    } else if (typeof user.quyenHan === 'string') {
+      try {
+        // Trường hợp backend trả về chuỗi JSON, ví dụ: '["ALL", "INVENTORY"]'
+        permissions = JSON.parse(user.quyenHan);
+      } catch (error) {
+        // Trường hợp backend trả về chuỗi đơn, ví dụ: "ALL"
+        permissions = [user.quyenHan];
+      }
+    }
+
+    // 3. Chốt chặn cuối cùng: Nếu sau khi cố gắng parse mà vẫn không phải mảng, từ chối quyền.
+    if (!Array.isArray(permissions)) return false;
+
+    // 4. Kiểm tra quyền
+    return permissions.includes('ALL') || permissions.includes(permission);
   };
 
   // --- TRẠM TRUNG CHUYỂN: TÌM TRANG MẶC ĐỊNH CHO TỪNG NHÂN VIÊN ---

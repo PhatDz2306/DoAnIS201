@@ -49,3 +49,54 @@ exports.importStock = async (req, res) => {
     res.status(500).json({ error: 'Lỗi khi nhập kho' });
   }
 };
+
+// 3. Kiểm kê kho (Tạo phiếu kiểm kê & Cập nhật tồn kho)
+exports.createInventoryCheck = async (req, res) => {
+  const { items } = req.body;
+  const maNhanVien = req.user ? req.user.maNhanVien : null;
+
+  try {
+    await db.query('BEGIN');
+
+    // 1. Tạo phiếu kiểm kê
+    const kiemKeResult = await db.query(
+      `INSERT INTO KIEM_KE (NGUOIKIEMKE) VALUES ($1) RETURNING MAKIEMKE`,
+      [maNhanVien]
+    );
+    const maKiemKe = kiemKeResult.rows[0].makiemke;
+
+    for (let item of items) {
+      // 2. Lấy số lượng hệ thống hiện tại
+      const tonKhoResult = await db.query(
+        `SELECT SOLUONGTON FROM TON_KHO WHERE MASANPHAM = $1`,
+        [item.masanpham]
+      );
+      const slHeThong = tonKhoResult.rows.length > 0 ? tonKhoResult.rows[0].soluongton : 0;
+      const slThucTe = parseInt(item.slthucte);
+      const slLech = slThucTe - slHeThong;
+
+      // 3. Thêm chi tiết kiểm kê
+      await db.query(
+        `INSERT INTO CHI_TIET_KIEM_KE (MAKIEMKE, MASANPHAM, SLHETHONG, SLTHUCTE, SLLECH, LYDOLECH) 
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [maKiemKe, item.masanpham, slHeThong, slThucTe, slLech, item.lydolech]
+      );
+
+      // 4. Cập nhật lại tồn kho thực tế
+      await db.query(
+        `INSERT INTO TON_KHO (MASANPHAM, SOLUONGTON) 
+         VALUES ($1, $2) 
+         ON CONFLICT (MASANPHAM) 
+         DO UPDATE SET SOLUONGTON = EXCLUDED.SOLUONGTON`,
+        [item.masanpham, slThucTe]
+      );
+    }
+
+    await db.query('COMMIT');
+    res.json({ message: 'Kiểm kê kho thành công!', maKiemKe });
+  } catch (err) {
+    await db.query('ROLLBACK');
+    console.error(err.message);
+    res.status(500).json({ error: 'Lỗi khi thực hiện kiểm kê' });
+  }
+};

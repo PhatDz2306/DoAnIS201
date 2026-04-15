@@ -20,10 +20,10 @@ exports.getAllProducts = async (req, res) => {
 
 // 2. Thêm sản phẩm mới (Thêm xử lý HINHANH)
 exports.createProduct = async (req, res) => {
-  const { tenSanPham, loaiSanPham, donViTinh, giaNiemYet, coTheMua, coTheBan, hinhAnh } = req.body;
+  const { tenSanPham, loaiSanPham, donViTinh, giaNiemYet, coTheMua, coTheBan } = req.body;
   
-  // Xử lý nếu ảnh rỗng thì set null để DB nhận giá trị NULL thay vì chuỗi rỗng
-  const imgUrl = hinhAnh && hinhAnh.trim() !== '' ? hinhAnh : null;
+  // Nếu có file upload lên, lấy link từ Cloudinary (req.file.path), nếu không thì để null
+  const imgUrl = req.file ? req.file.path : null;
 
   try {
     const newProduct = await db.query(
@@ -42,7 +42,9 @@ exports.updateProduct = async (req, res) => {
   const { id } = req.params;
   const { tenSanPham, loaiSanPham, donViTinh, giaNiemYet, coTheMua, coTheBan, hinhAnh } = req.body;
   
-  const imgUrl = hinhAnh && hinhAnh.trim() !== '' ? hinhAnh : null;
+  // Nếu người dùng up ảnh mới -> lấy link mới (req.file.path)
+  // Nếu KHÔNG up ảnh mới -> giữ lại link cũ được gửi từ frontend lên (hinhAnh)
+  const imgUrl = req.file ? req.file.path : (hinhAnh && hinhAnh.trim() !== '' ? hinhAnh : null);
 
   try {
     const updatedProduct = await db.query(

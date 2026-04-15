@@ -3,17 +3,20 @@ import { useState, useEffect, useRef } from 'react';
 export default function InventoryManager() {
   const [inventory, setInventory] = useState([]);
   const [isImporting, setIsImporting] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
   const [importForm, setImportForm] = useState({ masanpham: '', soluong: '', dongia: '' });
   
+  // --- STATES CHO KIỂM KÊ KHO ---
+  const [checkItems, setCheckItems] = useState([]); // [{ masanpham, tensanpham, slhethong, slthucte, lydolech }]
+
   // --- STATES CHO TÍNH NĂNG TÌM KIẾM SẢN PHẨM ---
   const [searchQuery, setSearchQuery] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
-  const dropdownRef = useRef(null); // Để xử lý click ra ngoài thì đóng dropdown
+  const dropdownRef = useRef(null); 
 
   useEffect(() => {
     fetchInventory();
     
-    // Xử lý sự kiện click ra ngoài dropdown tìm kiếm
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setShowDropdown(false);
@@ -54,7 +57,6 @@ export default function InventoryManager() {
       
       if (res.ok) {
         alert('Nhập kho thành công!');
-        // Reset form và thanh search
         setImportForm({ masanpham: '', soluong: '', dongia: '' });
         setSearchQuery('');
         setIsImporting(false);
@@ -65,27 +67,86 @@ export default function InventoryManager() {
     }
   };
 
+  // --- LOGIC KIỂM KÊ KHO ---
+  const handleAddToCheckList = (product) => {
+    if (checkItems.some(item => item.masanpham === product.masanpham)) {
+      return alert('Sản phẩm này đã có trong danh sách kiểm kê!');
+    }
+    setCheckItems([...checkItems, {
+      masanpham: product.masanpham,
+      tensanpham: product.tensanpham,
+      slhethong: product.soluongton,
+      slthucte: product.soluongton,
+      lydolech: ''
+    }]);
+    setSearchQuery('');
+    setShowDropdown(false);
+  };
+
+  const handleUpdateCheckItem = (index, field, value) => {
+    const newItems = [...checkItems];
+    newItems[index][field] = value;
+    setCheckItems(newItems);
+  };
+
+  const handleRemoveCheckItem = (index) => {
+    setCheckItems(checkItems.filter((_, i) => i !== index));
+  };
+
+  const handleCheckSubmit = async () => {
+    if (checkItems.length === 0) return alert('Vui lòng thêm ít nhất một sản phẩm để kiểm kê!');
+    
+    const token = localStorage.getItem('token');
+    const payload = {
+      items: checkItems.map(item => ({
+        masanpham: item.masanpham,
+        slthucte: parseInt(item.slthucte),
+        lydolech: item.lydolech
+      }))
+    };
+
+    try {
+      const res = await fetch('http://localhost:5000/api/inventory/check', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      
+      if (res.ok) {
+        alert('Kiểm kê kho thành công! Số lượng tồn kho đã được cập nhật.');
+        setCheckItems([]);
+        setIsChecking(false);
+        fetchInventory();
+      } else {
+        const errorData = await res.json();
+        alert('Lỗi: ' + errorData.error);
+      }
+    } catch (err) {
+      console.error('Lỗi kiểm kê kho:', err);
+    }
+  };
+
   // --- LỌC DANH SÁCH TÌM KIẾM ---
-  // Lọc danh sách (vừa tìm kiếm, vừa loại bỏ hàng cấm nhập)
   const filteredInventory = inventory.filter(item => {
-    // 1. Điều kiện tiên quyết: Phải được phép mua
-    if (!item.cothemua) return false; 
-    
-    // 2. Nếu không gõ gì vào ô tìm kiếm -> hiện tất cả hàng được phép mua
+    if (isImporting && !item.cothemua) return false; 
     if (!searchQuery) return true;
-    
-    // 3. Nếu có gõ tìm kiếm -> lọc theo tên hoặc mã
     return item.tensanpham.toLowerCase().includes(searchQuery.toLowerCase()) || 
            item.masanpham.toString().includes(searchQuery);
   });
 
   const handleSelectProduct = (product) => {
-    setImportForm({ ...importForm, masanpham: product.masanpham });
-    setSearchQuery(product.tensanpham); // Hiển thị tên SP lên ô input
-    setShowDropdown(false); // Ẩn danh sách đi
+    if (isImporting) {
+      setImportForm({ ...importForm, masanpham: product.masanpham });
+      setSearchQuery(product.tensanpham);
+      setShowDropdown(false);
+    } else if (isChecking) {
+      handleAddToCheckList(product);
+    }
   };
 
-  // --- TÍNH TOÁN THỐNG KÊ ---
   const totalProducts = inventory.length;
   const lowStockCount = inventory.filter(i => i.soluongton > 0 && i.soluongton <= 10).length;
   const outOfStockCount = inventory.filter(i => i.soluongton === 0).length;
@@ -102,16 +163,30 @@ export default function InventoryManager() {
           <h1 className="text-2xl font-bold text-gray-800">Inventory Summary</h1>
           <p className="text-sm text-gray-500 mt-1">Quản lý và theo dõi số lượng hàng hóa trong kho</p>
         </div>
-        <button 
-          onClick={() => {
-            setIsImporting(!isImporting);
-            setSearchQuery(''); // Reset ô tìm kiếm khi đóng/mở form
-            setImportForm({ masanpham: '', soluong: '', dongia: '' });
-          }}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-semibold shadow-sm transition-all flex items-center gap-2"
-        >
-          {isImporting ? '✕ Đóng biểu mẫu' : '➕ Tạo Phiếu Nhập Kho'}
-        </button>
+        <div className="flex gap-3">
+          <button 
+            onClick={() => {
+              setIsChecking(!isChecking);
+              setIsImporting(false);
+              setSearchQuery('');
+              setCheckItems([]);
+            }}
+            className={`${isChecking ? 'bg-gray-500' : 'bg-emerald-600'} hover:opacity-90 text-white px-5 py-2.5 rounded-xl font-semibold shadow-sm transition-all flex items-center gap-2`}
+          >
+            {isChecking ? '✕ Hủy kiểm kê' : '🔍 Kiểm kê kho'}
+          </button>
+          <button 
+            onClick={() => {
+              setIsImporting(!isImporting);
+              setIsChecking(false);
+              setSearchQuery('');
+              setImportForm({ masanpham: '', soluong: '', dongia: '' });
+            }}
+            className={`${isImporting ? 'bg-gray-500' : 'bg-indigo-600'} hover:opacity-90 text-white px-5 py-2.5 rounded-xl font-semibold shadow-sm transition-all flex items-center gap-2`}
+          >
+            {isImporting ? '✕ Đóng biểu mẫu' : '➕ Tạo Phiếu Nhập Kho'}
+          </button>
+        </div>
       </div>
 
       {/* SUMMARY CARDS */}
@@ -146,67 +221,136 @@ export default function InventoryManager() {
         </div>
       </div>
 
-      {/* FORM NHẬP KHO THÔNG MINH CÓ TÌM KIẾM */}
-      {isImporting && (
+      {/* SEARCH DROPDOWN COMPONENT (REUSABLE) */}
+      {(isImporting || isChecking) && (
         <div className="bg-white p-6 rounded-2xl shadow-sm mb-8 border border-indigo-100 overflow-visible relative">
           <h2 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <span className="text-indigo-600">📥</span> Nhập hàng mới vào kho
+            <span className="text-indigo-600">{isImporting ? '📥' : '🔍'}</span> 
+            {isImporting ? 'Nhập hàng mới vào kho' : 'Chọn sản phẩm để kiểm kê'}
           </h2>
-          <form onSubmit={handleImportSubmit} className="flex gap-4 items-end">
-            
-            {/* CỤM TÌM KIẾM VÀ CHỌN SẢN PHẨM */}
-            <div className="flex-1 relative" ref={dropdownRef}>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Tìm & Chọn sản phẩm</label>
-              <div className="relative">
-                <input 
-                  type="text"
-                  placeholder="🔍 Nhập tên hoặc mã sản phẩm..."
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setShowDropdown(true);
-                    setImportForm({ ...importForm, masanpham: '' }); // Xóa ID cũ nếu người dùng gõ tìm kiếm mới
-                  }}
-                  onFocus={() => setShowDropdown(true)}
-                  className="w-full border border-gray-300 rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-gray-50"
-                  required={!importForm.masanpham} // Yêu cầu nhập nếu chưa chọn được mã SP
-                />
-                
-                {/* DANH SÁCH DROPDOWN TÌM KIẾM */}
-                {showDropdown && (
-                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-                    {filteredInventory.length > 0 ? (
-                      filteredInventory.filter(item => item.cothemua).map(item => (
-                        <div 
-                          key={item.masanpham}
-                          onClick={() => handleSelectProduct(item)}
-                          className="px-4 py-3 border-b border-gray-50 hover:bg-indigo-50 cursor-pointer flex justify-between items-center transition-colors"
-                        >
-                          <div>
-                            <p className="font-bold text-gray-800 text-sm">{item.tensanpham}</p>
-                            <p className="text-xs text-gray-500">Mã: #{item.masanpham} - Kho hiện tại: {item.soluongton}</p>
-                          </div>
-                          <span className="text-xs font-semibold text-indigo-600 bg-indigo-100 px-2 py-1 rounded">Chọn</span>
+          
+          <div className="relative mb-6" ref={dropdownRef}>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tìm & Chọn sản phẩm</label>
+            <div className="relative">
+              <input 
+                type="text"
+                placeholder="🔍 Nhập tên hoặc mã sản phẩm..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setShowDropdown(true);
+                  if (isImporting) setImportForm({ ...importForm, masanpham: '' });
+                }}
+                onFocus={() => setShowDropdown(true)}
+                className="w-full border border-gray-300 rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-gray-50"
+              />
+              {showDropdown && (
+                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                  {filteredInventory.length > 0 ? (
+                    filteredInventory.map(item => (
+                      <div 
+                        key={item.masanpham}
+                        onClick={() => handleSelectProduct(item)}
+                        className="px-4 py-3 border-b border-gray-50 hover:bg-indigo-50 cursor-pointer flex justify-between items-center transition-colors"
+                      >
+                        <div>
+                          <p className="font-bold text-gray-800 text-sm">{item.tensanpham}</p>
+                          <p className="text-xs text-gray-500">Mã: #{item.masanpham} - Kho hiện tại: {item.soluongton}</p>
                         </div>
-                      ))
-                    ) : (
-                      <div className="px-4 py-3 text-sm text-gray-500 text-center">Không tìm thấy sản phẩm nào!</div>
+                        <span className="text-xs font-semibold text-indigo-600 bg-indigo-100 px-2 py-1 rounded">Chọn</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-4 py-3 text-sm text-gray-500 text-center">Không tìm thấy sản phẩm nào!</div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* FORM NHẬP KHO */}
+          {isImporting && (
+            <form onSubmit={handleImportSubmit} className="flex gap-4 items-end">
+              <div className="w-32">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Số lượng</label>
+                <input type="number" min="1" value={importForm.soluong} onChange={e => setImportForm({...importForm, soluong: e.target.value})} className="w-full border border-gray-300 rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-gray-50" required />
+              </div>
+              <div className="w-48">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Đơn giá nhập</label>
+                <input type="number" min="0" value={importForm.dongia} onChange={e => setImportForm({...importForm, dongia: e.target.value})} className="w-full border border-gray-300 rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-gray-50" required />
+              </div>
+              <button type="submit" className="bg-indigo-600 text-white px-8 py-2.5 rounded-xl font-bold hover:bg-indigo-700 transition-colors">Lưu Phiếu</button>
+            </form>
+          )}
+
+          {/* FORM KIỂM KÊ (MULTI-ITEM) */}
+          {isChecking && (
+            <div className="mt-4 border-t pt-4">
+              <h3 className="font-semibold text-gray-700 mb-3">Danh sách sản phẩm kiểm kê:</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-gray-500 border-b">
+                      <th className="text-left py-2">Sản phẩm</th>
+                      <th className="text-center py-2 w-24">Hệ thống</th>
+                      <th className="text-center py-2 w-32">Thực tế</th>
+                      <th className="text-center py-2 w-24">Lệch</th>
+                      <th className="text-left py-2">Lý do lệch</th>
+                      <th className="text-center py-2 w-16"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {checkItems.map((item, index) => {
+                      const lech = (parseInt(item.slthucte) || 0) - item.slhethong;
+                      return (
+                        <tr key={item.masanpham} className="border-b">
+                          <td className="py-3 font-medium text-gray-800">{item.tensanpham}</td>
+                          <td className="py-3 text-center">{item.slhethong}</td>
+                          <td className="py-3 px-2">
+                            <input 
+                              type="number" 
+                              min="0"
+                              value={item.slthucte}
+                              onChange={(e) => handleUpdateCheckItem(index, 'slthucte', e.target.value)}
+                              className="w-full border border-gray-300 rounded-lg p-1.5 text-center focus:ring-2 focus:ring-emerald-500 outline-none"
+                            />
+                          </td>
+                          <td className={`py-3 text-center font-bold ${lech === 0 ? 'text-gray-400' : lech > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                            {lech > 0 ? `+${lech}` : lech}
+                          </td>
+                          <td className="py-3 px-2">
+                            <input 
+                              type="text" 
+                              placeholder="Ghi chú lý do..."
+                              value={item.lydolech}
+                              onChange={(e) => handleUpdateCheckItem(index, 'lydolech', e.target.value)}
+                              className="w-full border border-gray-300 rounded-lg p-1.5 focus:ring-2 focus:ring-emerald-500 outline-none"
+                            />
+                          </td>
+                          <td className="py-3 text-center">
+                            <button onClick={() => handleRemoveCheckItem(index)} className="text-red-400 hover:text-red-600 text-lg">✕</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {checkItems.length === 0 && (
+                      <tr>
+                        <td colSpan="6" className="py-8 text-center text-gray-400 italic">Chọn sản phẩm từ ô tìm kiếm phía trên để bắt đầu kiểm kê</td>
+                      </tr>
                     )}
-                  </div>
-                )}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex justify-end mt-6">
+                <button 
+                  onClick={handleCheckSubmit}
+                  className="bg-emerald-600 text-white px-10 py-3 rounded-xl font-bold hover:bg-emerald-700 shadow-md transition-all"
+                >
+                  Hoàn Thành Kiểm Kê & Cập Nhật Kho
+                </button>
               </div>
             </div>
-
-            <div className="w-32">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Số lượng</label>
-              <input type="number" min="1" value={importForm.soluong} onChange={e => setImportForm({...importForm, soluong: e.target.value})} className="w-full border border-gray-300 rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-gray-50" required />
-            </div>
-            <div className="w-48">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Đơn giá nhập</label>
-              <input type="number" min="0" value={importForm.dongia} onChange={e => setImportForm({...importForm, dongia: e.target.value})} className="w-full border border-gray-300 rounded-xl p-2.5 outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-gray-50" required />
-            </div>
-            <button type="submit" className="bg-indigo-600 text-white px-8 py-2.5 rounded-xl font-bold hover:bg-indigo-700 transition-colors z-0 relative">Lưu Phiếu</button>
-          </form>
+          )}
         </div>
       )}
 

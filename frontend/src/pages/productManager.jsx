@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 export default function ProductManager() {
   const [products, setProducts] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  
+  const [imageFile, setImageFile] = useState(null);
+  const fileInputRef = useRef(null); // Dùng để can thiệp vào thẻ input file
+  const [isSubmitting, setIsSubmitting] = useState(false); // Dùng để tạo hiệu ứng loading
   const [formData, setFormData] = useState({
     tenSanPham: '',
     loaiSanPham: 'Hàng hóa',
@@ -40,12 +42,16 @@ export default function ProductManager() {
 
   const handleAddClick = () => {
     setEditingId(null);
+    setImageFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = ''; // Thêm dòng này
     setFormData({ tenSanPham: '', loaiSanPham: 'Hàng hóa', donViTinh: 'Cái', giaNiemYet: '', coTheMua: true, coTheBan: true, hinhAnh: '' });
     setIsDrawerOpen(true);
   };
 
   const handleEditClick = (product) => {
     setEditingId(product.masanpham);
+    setImageFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = ''; // Thêm dòng này
     setFormData({
       tenSanPham: product.tensanpham,
       loaiSanPham: product.loaisanpham || 'Hàng hóa',
@@ -67,16 +73,31 @@ export default function ProductManager() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true); // Bật trạng thái đang tải
+
     const url = editingId 
       ? `http://localhost:5000/api/products/${editingId}` 
       : 'http://localhost:5000/api/products';
     const method = editingId ? 'PUT' : 'POST';
 
+    const submitData = new FormData();
+    submitData.append('tenSanPham', formData.tenSanPham);
+    submitData.append('loaiSanPham', formData.loaiSanPham);
+    submitData.append('donViTinh', formData.donViTinh);
+    submitData.append('giaNiemYet', formData.giaNiemYet);
+    submitData.append('coTheMua', formData.coTheMua);
+    submitData.append('coTheBan', formData.coTheBan);
+    
+    if (imageFile) {
+        submitData.append('hinhAnh', imageFile);
+    } else {
+        submitData.append('hinhAnh', formData.hinhAnh || '');
+    }
+
     try {
       const response = await fetch(url, {
         method: method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: submitData
       });
       if (response.ok) {
         handleCloseDrawer();
@@ -84,6 +105,8 @@ export default function ProductManager() {
       }
     } catch (error) {
       console.error('Lỗi:', error);
+    } finally {
+      setIsSubmitting(false); // Tắt trạng thái đang tải dù thành công hay lỗi
     }
   };
 
@@ -265,12 +288,17 @@ export default function ProductManager() {
             
             {/* Hình ảnh */}
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest ml-1">Link Ảnh (URL)</label>
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest ml-1">Hình ảnh sản phẩm</label>
               <input 
-                name="hinhAnh" value={formData.hinhAnh} onChange={handleChange}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all text-slate-800 text-sm" 
-                placeholder="https://example.com/image.jpg" type="text"
+                type="file" 
+                accept="image/*"
+                ref={fileInputRef}
+                onChange={(e) => setImageFile(e.target.files[0])}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all text-slate-800 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" 
               />
+              {editingId && formData.hinhAnh && !imageFile && (
+                <span className="text-xs text-slate-500 italic ml-1">Đã có ảnh. Chọn file mới nếu muốn thay đổi.</span>
+              )}
             </div>
 
             <div className="space-y-1">
@@ -354,9 +382,14 @@ export default function ProductManager() {
             </button>
             <button 
               type="submit" 
-              className="flex-[2] py-3 bg-gradient-to-r from-indigo-600 to-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 hover:scale-[1.02] active:scale-95 transition-all"
+              disabled={isSubmitting}
+              className={`flex-[2] py-3 text-white font-bold rounded-xl transition-all ${
+                isSubmitting 
+                  ? 'bg-slate-400 cursor-wait' 
+                  : 'bg-gradient-to-r from-indigo-600 to-indigo-500 shadow-lg shadow-indigo-500/20 hover:scale-[1.02] active:scale-95'
+              }`}
             >
-              {editingId ? 'Lưu Thay Đổi' : 'Tạo Sản Phẩm'}
+              {isSubmitting ? 'Đang xử lý...' : (editingId ? 'Lưu Thay Đổi' : 'Tạo Sản Phẩm')}
             </button>
           </div>
         </form>
