@@ -58,12 +58,13 @@ module.exports = {
                 h.SONGUOIPHUTHUOC AS songuoi_phuthuoc,
                 h.TIENGIAMNPT AS tien_giam_npt
          FROM NHANVIEN n
-         JOIN HO_SO_LUONG h ON n.MANHANVIEN = h.MANHANVIEN
+         LEFT JOIN HO_SO_LUONG h ON n.MANHANVIEN = h.MANHANVIEN
          WHERE n.TRANGTHAI = $1`,
         ['Đang làm việc']
       );
 
       const created = [];
+      const updated = [];
       for (const emp of employeesRes.rows) {
         const manhanvien = emp.manhanvien;
         const mucluong = Number(emp.mucluong || 0);
@@ -82,17 +83,34 @@ module.exports = {
 
         const thuclinh = Math.round(mucluong - tongBaoHiemNV - totalTax);
 
-        // If payroll for this employee and month exists, delete it (cascade will remove details)
-        await client.query('DELETE FROM PHIEU_LUONG WHERE MANHANVIEN = $1 AND THANGNAM = $2', [manhanvien, thangnam]);
-
-        const insertPl = await client.query(
-          `INSERT INTO PHIEU_LUONG (MANHANVIEN, THANGNAM, LUONG, TONGBAOHIEMNV, TONGTHUETNCN, THUCLINH, TRANGTHAI)
-           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING MAPHIEU`,
-          [manhanvien, thangnam, mucluong, tongBaoHiemNV, totalTax, thuclinh, 'Pending']
+        // Check whether a payroll record already exists for this employee+month
+        const existingPlRes = await client.query(
+          `SELECT MAPHIEU FROM PHIEU_LUONG WHERE MANHANVIEN = $1 AND THANGNAM = $2`,
+          [manhanvien, thangnam]
         );
 
-        const maphieu = insertPl.rows[0].maphieu;
+        let maphieu;
+        if (existingPlRes.rows.length > 0) {
+          // Update existing payroll record
+          maphieu = existingPlRes.rows[0].maphieu;
+          await client.query(
+            `UPDATE PHIEU_LUONG SET LUONG = $1, TONGBAOHIEMNV = $2, TONGTHUETNCN = $3, THUCLINH = $4, TRANGTHAI = $5 WHERE MAPHIEU = $6`,
+            [mucluong, tongBaoHiemNV, totalTax, thuclinh, 'Pending', maphieu]
+          );
 
+          // Replace detail rows
+          await client.query(`DELETE FROM CHI_TIET_BAO_HIEM WHERE MAPHIEU = $1`, [maphieu]);
+          await client.query(`DELETE FROM CHI_TIET_THUE_TNCN WHERE MAPHIEU = $1`, [maphieu]);
+        } else {
+          const insertPl = await client.query(
+            `INSERT INTO PHIEU_LUONG (MANHANVIEN, THANGNAM, LUONG, TONGBAOHIEMNV, TONGTHUETNCN, THUCLINH, TRANGTHAI)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING MAPHIEU`,
+            [manhanvien, thangnam, mucluong, tongBaoHiemNV, totalTax, thuclinh, 'Pending']
+          );
+          maphieu = insertPl.rows[0].maphieu;
+        }
+
+        // Insert insurance detail and tax details
         await client.query(
           `INSERT INTO CHI_TIET_BAO_HIEM (MAPHIEU, BHXH_NV, BHYT_NV, BHTN_NV, BHXH_DN, BHYT_DN, BHTN_DN)
            VALUES ($1,$2,$3,$4,$5,$6,$7)`,
@@ -107,11 +125,15 @@ module.exports = {
           );
         }
 
-        created.push({ manhanvien, maphieu, hoten: emp.hoten, mucluong, tongBaoHiemNV, totalTax, thuclinh });
+        if (existingPlRes.rows.length > 0) {
+          updated.push({ manhanvien, maphieu, hoten: emp.hoten, mucluong, tongBaoHiemNV, totalTax, thuclinh });
+        } else {
+          created.push({ manhanvien, maphieu, hoten: emp.hoten, mucluong, tongBaoHiemNV, totalTax, thuclinh });
+        }
       }
 
       await client.query('COMMIT');
-      res.json({ success: true, thangnam, created });
+      res.json({ success: true, thangnam, created, updated });
     } catch (error) {
       await client.query('ROLLBACK');
       console.error('calculatePayroll error:', error);
