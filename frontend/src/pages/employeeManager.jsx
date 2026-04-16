@@ -9,7 +9,8 @@ export default function EmployeeManager() {
   
   // State cho thêm mới
   const [formData, setFormData] = useState({
-    hoten: '', sdt: '', email: '', username: '', password: '', maVaiTro: 2
+    hoten: '', sdt: '', email: '', username: '', password: '', maVaiTro: 2,
+    mucLuong: '', soNguoiphuthuoc: ''
   });
 
   // State cho Cập nhật
@@ -40,14 +41,19 @@ export default function EmployeeManager() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({
+          ...formData,
+          maVaiTro: Number(formData.maVaiTro),
+          mucLuong: Number(formData.mucLuong || 0),
+          soNguoiphuthuoc: Number(formData.soNguoiphuthuoc || 0)
+        })
       });
       const data = await res.json();
       if (res.ok) {
         alert('Tạo nhân viên thành công!');
         setShowAddForm(false);
         fetchEmployees();
-        setFormData({ hoten: '', sdt: '', email: '', username: '', password: '', maVaiTro: 2 });
+          setFormData({ hoten: '', sdt: '', email: '', username: '', password: '', maVaiTro: 2, mucLuong: '', soNguoiphuthuoc: '' });
       } else {
         alert(data.error || 'Có lỗi xảy ra');
       }
@@ -182,6 +188,14 @@ export default function EmployeeManager() {
                 <option value={3}>Nhân viên kho</option>
                 <option value={4}>Nhân viên dịch vụ</option>
               </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Mức lương (VND)</label>
+              <input required type="number" min="0" step="1000" className="w-full p-2.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm" value={formData.mucLuong} onChange={e => setFormData({...formData, mucLuong: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Số người phụ thuộc</label>
+              <input required type="number" min="0" step="1" className="w-full p-2.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm" value={formData.soNguoiphuthuoc} onChange={e => setFormData({...formData, soNguoiphuthuoc: e.target.value})} />
             </div>
             <div className="md:col-span-3 flex justify-end mt-2">
               <button type="submit" className="bg-indigo-600 text-white px-8 py-2.5 rounded-xl font-bold hover:bg-indigo-700">Lưu Nhân Viên</button>

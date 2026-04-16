@@ -83,7 +83,7 @@ exports.getAllEmployees = async (req, res) => {
 
 // Thêm hàm này vào dưới cùng của authController.js
 exports.register = async (req, res) => {
-  const { hoten, sdt, email, username, password, maVaiTro } = req.body;
+  const { hoten, sdt, email, username, password, maVaiTro, mucLuong, soNguoiphuthuoc } = req.body;
 
   try {
     // 1. Tự động mã hóa mật khẩu ngay trong code
@@ -114,6 +114,13 @@ exports.register = async (req, res) => {
       VALUES ($1, $2)
     `;
     await db.query(insertPhanQuyenQuery, [maVaiTro, maNhanVienMoi]);
+
+    // Bước 2.4: Tạo hồ sơ lương cho nhân viên
+    const insertHoSoLuongQuery = `
+      INSERT INTO HO_SO_LUONG (MANHANVIEN, MUCLUONG, SONGUOIPHUTHUOC)
+      VALUES ($1, $2, $3)
+    `;
+    await db.query(insertHoSoLuongQuery, [maNhanVienMoi, mucLuong, soNguoiphuthuoc]);
 
     // 3. Nếu mọi thứ suôn sẻ, lưu tất cả vào Database
     await db.query('COMMIT');
