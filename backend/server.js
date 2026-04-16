@@ -17,6 +17,7 @@ const posRoutes = require('./src/routes/posRoutes');
 const customerRoutes = require('./src/routes/customerRoutes');
 const authRoutes = require('./src/routes/authRoutes');
 const dashboardRoutes = require('./src/routes/dashboardRoutes');
+const payrollRoutes = require('./src/routes/payrollRoutes');
 // Một Route cơ bản để test
 app.get('/', (req, res) => {
   res.send('Backend ERP Pet Shop đang chạy ngon lành!');
@@ -27,6 +28,7 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/pos', posRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/payroll', payrollRoutes);
 // Chạy server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

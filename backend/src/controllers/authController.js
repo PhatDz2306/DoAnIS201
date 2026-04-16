@@ -66,11 +66,13 @@ exports.getAllEmployees = async (req, res) => {
   try {
     const query = `
       SELECT nv.MANHANVIEN, nv.HOTEN, nv.SDT, nv.EMAIL, nv.TRANGTHAI, nv.NGAYVAOLAM,
-             vt.MAVAITRO, vt.TENVAITRO, tk.USERNAME
+             vt.MAVAITRO, vt.TENVAITRO, tk.USERNAME,
+             hsl.MUCLUONG, hsl.SONGUOIPHUTHUOC
       FROM NHANVIEN nv
       JOIN TAI_KHOAN_NHAN_VIEN tk ON nv.MANHANVIEN = tk.MANHANVIEN
       JOIN PHAN_QUYEN_NHAN_VIEN pq ON nv.MANHANVIEN = pq.MANHANVIEN
       JOIN VAI_TRO vt ON pq.MAVAITRO = vt.MAVAITRO
+      LEFT JOIN HO_SO_LUONG hsl ON nv.MANHANVIEN = hsl.MANHANVIEN
       ORDER BY nv.MANHANVIEN DESC
     `;
     const result = await db.query(query);
@@ -140,10 +142,10 @@ exports.register = async (req, res) => {
   }
 };
 
-// Cập nhật thông tin nhân viên
+// Cập nhật thông tin nhân viên (bao gồm hồ sơ lương)
 exports.updateEmployee = async (req, res) => {
   const { id } = req.params; // Lấy ID từ URL
-  const { hoten, sdt, email, maVaiTro, trangthai } = req.body;
+  const { hoten, sdt, email, maVaiTro, trangthai, mucLuong, soNguoiphuthuoc } = req.body;
 
   try {
     await db.query('BEGIN');
@@ -165,6 +167,25 @@ exports.updateEmployee = async (req, res) => {
       await db.query(`UPDATE TAI_KHOAN_NHAN_VIEN SET TRANG_THAI = false WHERE MANHANVIEN = $1`, [id]);
     } else {
       await db.query(`UPDATE TAI_KHOAN_NHAN_VIEN SET TRANG_THAI = true WHERE MANHANVIEN = $1`, [id]);
+    }
+
+    // 4. Cập nhật hồ sơ lương nếu client gửi mucLuong hoặc soNguoiphuthuoc
+    if (typeof mucLuong !== 'undefined' || typeof soNguoiphuthuoc !== 'undefined') {
+      const salaryRecord = await db.query(`SELECT MANHANVIEN FROM HO_SO_LUONG WHERE MANHANVIEN = $1`, [id]);
+      const newMucLuong = typeof mucLuong !== 'undefined' ? mucLuong : null;
+      const newSoNguoi = typeof soNguoiphuthuoc !== 'undefined' ? soNguoiphuthuoc : null;
+
+      if (salaryRecord.rows.length > 0) {
+        await db.query(
+          `UPDATE HO_SO_LUONG SET MUCLUONG = COALESCE($1, MUCLUONG), SONGUOIPHUTHUOC = COALESCE($2, SONGUOIPHUTHUOC) WHERE MANHANVIEN = $3`,
+          [newMucLuong, newSoNguoi, id]
+        );
+      } else {
+        await db.query(
+          `INSERT INTO HO_SO_LUONG (MANHANVIEN, MUCLUONG, SONGUOIPHUTHUOC) VALUES ($1, $2, $3)`,
+          [id, newMucLuong, newSoNguoi]
+        );
+      }
     }
 
     await db.query('COMMIT');
