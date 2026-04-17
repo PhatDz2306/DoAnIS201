@@ -7,6 +7,7 @@ import PosManager from './pages/posManager'
 import CustomerManager from './pages/customerManager';
 import EmployeeManager from './pages/employeeManager';
 import Dashboard from './pages/dashboardManager';
+import AttendanceManager from './pages/attendanceManager';
 // Tạo một component ảo cho Dashboard để hiển thị tạm
 
 function App() {
@@ -134,6 +135,18 @@ function App() {
             </NavLink>
           )}
 
+          {/* CHẤM CÔNG: Hiển thị cho tất cả */}
+          <NavLink
+            to="/attendance"
+            className={({ isActive }) =>
+              `w-full flex items-center px-4 py-3 rounded-xl transition-all font-medium ${
+                isActive ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-800'
+              }`
+            }
+          >
+            ⏱️ Chấm công
+          </NavLink>
+
           {/* NHÂN SỰ: Quyền ALL */}
           {hasPermission('ALL') && (
             <NavLink
@@ -203,6 +216,7 @@ function App() {
             <Route path="/pos" element={hasPermission('POS') ? <PosManager /> : <Navigate to={getDefaultRoute()} replace />} />
             <Route path="/customers" element={hasPermission('CUSTOMER') ? <CustomerManager /> : <Navigate to={getDefaultRoute()} replace />} />
             <Route path="/employees" element={hasPermission('ALL') ? <EmployeeManager /> : <Navigate to={getDefaultRoute()} replace />} />
+            <Route path="/attendance" element={<AttendanceManager />} />
           </Routes>
         </main>
       </div>
