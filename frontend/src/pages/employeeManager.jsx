@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/authContext';
+import { useNavigate } from 'react-router-dom';
 
 export default function EmployeeManager() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [employees, setEmployees] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [activeTab, setActiveTab] = useState('All');
@@ -10,20 +12,33 @@ export default function EmployeeManager() {
   // State cho thêm mới
   const [formData, setFormData] = useState({
     hoten: '', sdt: '', email: '', username: '', password: '', maVaiTro: 2,
-    mucLuong: '', soNguoiphuthuoc: ''
   });
 
   // State cho Cập nhật
   const [editingEmployee, setEditingEmployee] = useState(null);
   const [editFormData, setEditFormData] = useState({});
   // View mode: 'staff' or 'payroll'
-  const [viewMode, setViewMode] = useState('staff');
-  const [payrollData, setPayrollData] = useState([]);
-  const [payrollLoading, setPayrollLoading] = useState(false);
+  
+  // HR-specific UI states
+  const [weekDays, setWeekDays] = useState([]);
+  const [weeklyAttendance, setWeeklyAttendance] = useState([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [pendingLeaves, setPendingLeaves] = useState([]);
+  const [leavesLoading, setLeavesLoading] = useState(false);
+
+  const parsePermissions = () => {
+    if (!user || !user.quyenHan) return [];
+    if (Array.isArray(user.quyenHan)) return user.quyenHan;
+    if (typeof user.quyenHan === 'string') {
+      try { return JSON.parse(user.quyenHan); } catch (e) { return [user.quyenHan]; }
+    }
+    return [];
+  };
+  const isAdmin = parsePermissions().includes('ALL');
 
   const fetchEmployees = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/auth/employees', {
+      const res = await fetch('http://localhost:5000/api/hr/employees', {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       const data = await res.json();
@@ -36,8 +51,11 @@ export default function EmployeeManager() {
   useEffect(() => { fetchEmployees(); }, []);
 
   useEffect(() => {
-    if (viewMode === 'payroll') fetchPayrollRecords();
-  }, [viewMode]);
+    if (isAdmin) {
+      fetchWeeklyAttendance();
+      fetchPendingLeaves();
+    }
+  }, [isAdmin]);
 
   const formatCurrency = (value) => {
     try {
@@ -47,42 +65,79 @@ export default function EmployeeManager() {
     }
   };
 
-  const fetchPayrollRecords = async (thangnam) => {
-    setPayrollLoading(true);
+  
+
+  // HR: fetch weekly attendance (manager view)
+  const fetchWeeklyAttendance = async (start) => {
+    setAttendanceLoading(true);
     try {
-      const url = thangnam ? `http://localhost:5000/api/payroll?thangnam=${encodeURIComponent(thangnam)}` : 'http://localhost:5000/api/payroll';
+      let url = 'http://localhost:5000/api/hr/employees/weekly-attendance';
+      if (start) url += `?start=${encodeURIComponent(start)}`;
       const res = await fetch(url, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
       const data = await res.json();
-      if (res.ok) setPayrollData(data.data || []);
-      else setPayrollData([]);
-    } catch (error) {
-      console.error('Lỗi tải payroll:', error);
-      setPayrollData([]);
+      if (res.ok) {
+        setWeekDays(data.days || []);
+        setWeeklyAttendance(data.data || []);
+      } else {
+        setWeekDays([]);
+        setWeeklyAttendance([]);
+      }
+    } catch (err) {
+      console.error('fetchWeeklyAttendance error:', err);
+      setWeekDays([]);
+      setWeeklyAttendance([]);
     } finally {
-      setPayrollLoading(false);
+      setAttendanceLoading(false);
     }
   };
 
-  const runPayroll = async () => {
-    if (!window.confirm('Chạy tính lương cho tất cả nhân viên đang làm việc cho tháng hiện tại?')) return;
-    setPayrollLoading(true);
+  const fetchPendingLeaves = async () => {
+    setLeavesLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/payroll/calculate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
+      const res = await fetch('http://localhost:5000/api/hr/leaves/pending', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
       const data = await res.json();
-      if (res.ok) {
-        alert('Đã chạy tính lương thành công');
-        fetchPayrollRecords();
-      } else {
-        alert(data.error || 'Lỗi khi chạy tính lương');
-      }
-    } catch (error) {
-      console.error('runPayroll error:', error);
-      alert('Lỗi kết nối server khi chạy tính lương');
+      if (res.ok) setPendingLeaves(data.data || []);
+      else setPendingLeaves([]);
+    } catch (err) {
+      console.error('fetchPendingLeaves error:', err);
+      setPendingLeaves([]);
     } finally {
-      setPayrollLoading(false);
+      setLeavesLoading(false);
+    }
+  };
+
+  const approveLeave = async (id) => {
+    if (!window.confirm('Bạn chắc chắn muốn duyệt đơn này?')) return;
+    try {
+      const res = await fetch(`http://localhost:5000/api/hr/leaves/${id}/approve`, { method: 'PUT', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
+      if (res.ok) {
+        alert('Đã duyệt đơn');
+        fetchPendingLeaves();
+        fetchWeeklyAttendance();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Lỗi khi duyệt đơn');
+      }
+    } catch (err) {
+      console.error('approveLeave error:', err);
+      alert('Lỗi kết nối');
+    }
+  };
+
+  const rejectLeave = async (id) => {
+    const reason = window.prompt('Lý do từ chối (tùy chọn)');
+    try {
+      const res = await fetch(`http://localhost:5000/api/hr/leaves/${id}/reject`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify({ reason }) });
+      if (res.ok) {
+        alert('Đã từ chối đơn');
+        fetchPendingLeaves();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Lỗi khi từ chối đơn');
+      }
+    } catch (err) {
+      console.error('rejectLeave error:', err);
+      alert('Lỗi kết nối');
     }
   };
 
@@ -90,17 +145,19 @@ export default function EmployeeManager() {
   const handleAddSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch('http://localhost:5000/api/auth/register', {
+      const res = await fetch('http://localhost:5000/api/hr/register', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
         body: JSON.stringify({
-          ...formData,
-          maVaiTro: Number(formData.maVaiTro),
-          mucLuong: Number(formData.mucLuong || 0),
-          soNguoiphuthuoc: Number(formData.soNguoiphuthuoc || 0)
+          hoten: formData.hoten,
+          sdt: formData.sdt,
+          email: formData.email,
+          username: formData.username,
+          password: formData.password,
+          maVaiTro: Number(formData.maVaiTro)
         })
       });
       const data = await res.json();
@@ -108,7 +165,7 @@ export default function EmployeeManager() {
         alert('Tạo nhân viên thành công!');
         setShowAddForm(false);
         fetchEmployees();
-          setFormData({ hoten: '', sdt: '', email: '', username: '', password: '', maVaiTro: 2, mucLuong: '', soNguoiphuthuoc: '' });
+        setFormData({ hoten: '', sdt: '', email: '', username: '', password: '', maVaiTro: 2 });
       } else {
         alert(data.error || 'Có lỗi xảy ra');
       }
@@ -126,8 +183,6 @@ export default function EmployeeManager() {
       email: emp.email,
       maVaiTro: emp.mavaitro || 2,
       trangthai: emp.trangthai,
-      mucLuong: emp.mucluong || '',
-      soNguoiphuthuoc: emp.songuoiphuthuoc || ''
     });
   };
 
@@ -136,13 +191,14 @@ export default function EmployeeManager() {
     e.preventDefault();
     try {
       const payload = {
-        ...editFormData,
+        hoten: editFormData.hoten,
+        sdt: editFormData.sdt,
+        email: editFormData.email,
         maVaiTro: Number(editFormData.maVaiTro),
-        mucLuong: editFormData.mucLuong === '' ? undefined : Number(editFormData.mucLuong),
-        soNguoiphuthuoc: editFormData.soNguoiphuthuoc === '' ? undefined : Number(editFormData.soNguoiphuthuoc)
+        trangthai: editFormData.trangthai
       };
 
-      const res = await fetch(`http://localhost:5000/api/auth/employees/${editingEmployee.manhanvien}`, {
+      const res = await fetch(`http://localhost:5000/api/hr/employees/${editingEmployee.manhanvien}`, {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',
@@ -168,7 +224,7 @@ export default function EmployeeManager() {
   const handleDelete = async (id, name) => {
     if (window.confirm(`Bạn có chắc chắn muốn cho nhân viên "${name}" nghỉ việc không? Tài khoản sẽ bị khóa.`)) {
       try {
-        const res = await fetch(`http://localhost:5000/api/auth/employees/${id}`, {
+        const res = await fetch(`http://localhost:5000/api/hr/employees/${id}`, {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
         });
@@ -234,6 +290,14 @@ export default function EmployeeManager() {
         </div>
       </div>
 
+      {/* Quick admin links: tách đơn chờ và chấm công tuần ra trang riêng */}
+      {isAdmin && (
+        <div className="flex gap-3 mb-6">
+          <button onClick={() => navigate('/hr/leaves/pending')} className="px-4 py-2 rounded-xl bg-yellow-500 text-white">Đơn chờ</button>
+          <button onClick={() => navigate('/hr/attendance/weekly')} className="px-4 py-2 rounded-xl bg-indigo-500 text-white">Chấm công tuần</button>
+        </div>
+      )}
+
       {/* FORM THÊM MỚI NHÂN VIÊN */}
       {showAddForm && !editingEmployee && (
         <div className="bg-white p-6 rounded-2xl shadow-sm mb-8 border border-indigo-100">
@@ -253,14 +317,7 @@ export default function EmployeeManager() {
                 <option value={4}>Nhân viên dịch vụ</option>
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Mức lương (VND)</label>
-              <input required type="number" min="0" step="1000" className="w-full p-2.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm" value={formData.mucLuong} onChange={e => setFormData({...formData, mucLuong: e.target.value})} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Số người phụ thuộc</label>
-              <input required type="number" min="0" step="1" className="w-full p-2.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm" value={formData.soNguoiphuthuoc} onChange={e => setFormData({...formData, soNguoiphuthuoc: e.target.value})} />
-            </div>
+            {/* Lương và thông tin phụ thuộc được quản lý trong module Payroll */}
             <div className="md:col-span-3 flex justify-end mt-2">
               <button type="submit" className="bg-indigo-600 text-white px-8 py-2.5 rounded-xl font-bold hover:bg-indigo-700">Lưu Nhân Viên</button>
             </div>
@@ -296,14 +353,7 @@ export default function EmployeeManager() {
                 <option value="Đã nghỉ việc">Đã nghỉ việc</option>
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Mức lương (VND)</label>
-              <input type="number" min="0" step="1000" className="w-full p-2.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 text-sm bg-white" value={editFormData.mucLuong} onChange={e => setEditFormData({...editFormData, mucLuong: e.target.value})} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Số người phụ thuộc</label>
-              <input type="number" min="0" step="1" className="w-full p-2.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 text-sm bg-white" value={editFormData.soNguoiphuthuoc} onChange={e => setEditFormData({...editFormData, soNguoiphuthuoc: e.target.value})} />
-            </div>
+            {/* Lương và thông tin phục thuộc được quản lý qua module Payroll */}
 
             <div className="md:col-span-3 flex justify-end mt-2 gap-3">
               <button type="button" onClick={() => setEditingEmployee(null)} className="bg-gray-200 text-gray-800 px-6 py-2.5 rounded-xl font-bold hover:bg-gray-300">Hủy</button>
@@ -313,129 +363,65 @@ export default function EmployeeManager() {
         </div>
       )}
 
-      {/* VIEW MODE TOGGLE */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex gap-3">
-          <button onClick={() => setViewMode('staff')} className={`px-4 py-2 rounded-xl font-medium ${viewMode === 'staff' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200'}`}>
-            Staff Directory
+      {/* STAFF LIST */}
+      {/* FILTER TABS */}
+      <div className="flex border-b border-gray-200 mb-6">
+        {['All', 'Active', 'Inactive'].map((tab) => (
+          <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-3 font-medium text-sm transition-colors border-b-2 ${ activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
+            {tab === 'All' ? 'Tất cả nhân viên' : tab === 'Active' ? 'Đang làm việc' : 'Đã nghỉ việc'}
           </button>
-          <button onClick={() => setViewMode('payroll')} className={`px-4 py-2 rounded-xl font-medium ${viewMode === 'payroll' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200'}`}>
-            Payroll
-          </button>
-        </div>
-        {viewMode === 'payroll' && (
-          <div className="flex items-center gap-2">
-            <button onClick={runPayroll} disabled={payrollLoading} className="bg-emerald-600 text-white px-4 py-2 rounded-xl font-semibold">
-              {payrollLoading ? 'Running...' : 'Run Payroll'}
-            </button>
-          </div>
-        )}
+        ))}
       </div>
 
-      {viewMode === 'staff' && (
-        <>
-          {/* FILTER TABS */}
-          <div className="flex border-b border-gray-200 mb-6">
-            {['All', 'Active', 'Inactive'].map((tab) => (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-3 font-medium text-sm transition-colors border-b-2 ${ activeTab === tab ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
-                {tab === 'All' ? 'Tất cả nhân viên' : tab === 'Active' ? 'Đang làm việc' : 'Đã nghỉ việc'}
-              </button>
-            ))}
-          </div>
+      {/* GRID CARDS - DANH SÁCH NHÂN VIÊN */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        {filteredEmployees.map((emp) => {
+          const isActive = emp.trangthai === 'Đang làm việc';
+          const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(emp.hoten)}&background=random&color=fff&size=128`;
 
-          {/* GRID CARDS - DANH SÁCH NHÂN VIÊN */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredEmployees.map((emp) => {
-              const isActive = emp.trangthai === 'Đang làm việc';
-              const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(emp.hoten)}&background=random&color=fff&size=128`;
+          return (
+            <div key={emp.manhanvien} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-all relative group">
+              
+              {/* ACTION BUTTONS (Sửa / Xóa) hiển thị khi hover */}
+              <div className="absolute top-3 left-3 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2 z-10">
+                <button onClick={() => handleOpenEdit(emp)} className="p-2 bg-white rounded-full shadow hover:bg-amber-50 hover:text-amber-600 text-gray-500 transition" title="Sửa thông tin">
+                  ✏️
+                </button>
+                {isActive && (
+                  <button onClick={() => handleDelete(emp.manhanvien, emp.hoten)} className="p-2 bg-white rounded-full shadow hover:bg-red-50 hover:text-red-600 text-gray-500 transition" title="Cho nghỉ việc">
+                    🗑️
+                  </button>
+                )}
+              </div>
 
-              return (
-                <div key={emp.manhanvien} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-all relative group">
-                  
-                  {/* ACTION BUTTONS (Sửa / Xóa) hiển thị khi hover */}
-                  <div className="absolute top-3 left-3 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2 z-10">
-                    <button onClick={() => handleOpenEdit(emp)} className="p-2 bg-white rounded-full shadow hover:bg-amber-50 hover:text-amber-600 text-gray-500 transition" title="Sửa thông tin">
-                      ✏️
-                    </button>
-                    {isActive && (
-                      <button onClick={() => handleDelete(emp.manhanvien, emp.hoten)} className="p-2 bg-white rounded-full shadow hover:bg-red-50 hover:text-red-600 text-gray-500 transition" title="Cho nghỉ việc">
-                        🗑️
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Card Header & Avatar */}
-                  <div className="p-6 flex flex-col items-center text-center border-b border-gray-50 relative pt-8">
-                    <span className={`absolute top-4 right-4 w-3 h-3 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-400'}`} title={emp.trangthai}></span>
-                    <img src={avatarUrl} alt={emp.hoten} className="w-20 h-20 rounded-full object-cover border-4 border-gray-50 mb-3 shadow-sm" />
-                    <h3 className="text-lg font-bold text-gray-800">{emp.hoten}</h3>
-                    <p className="text-sm text-gray-500 font-medium">@{emp.username}</p>
-                    <div className="mt-3">
-                      <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold">{emp.tenvaitro}</span>
-                    </div>
-                  </div>
-
-                  <div className="p-5 bg-gray-50/50 space-y-3">
-                    <div className="flex items-center gap-3 text-sm text-gray-600"><span className="text-gray-400">📧</span><span className="truncate">{emp.email}</span></div>
-                    <div className="flex items-center gap-3 text-sm text-gray-600"><span className="text-gray-400">📞</span><span>{emp.sdt}</span></div>
-                  </div>
-
-                  <div className="px-5 py-4 bg-white border-t border-gray-100 flex justify-between items-center text-xs text-gray-500">
-                    <span>Mã NV: #{emp.manhanvien}</span>
-                    <span>Vào làm: {formatDate(emp.ngayvaolam)}</span>
-                  </div>
+              {/* Card Header & Avatar */}
+              <div className="p-6 flex flex-col items-center text-center border-b border-gray-50 relative pt-8">
+                <span className={`absolute top-4 right-4 w-3 h-3 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-400'}`} title={emp.trangthai}></span>
+                <img src={avatarUrl} alt={emp.hoten} className="w-20 h-20 rounded-full object-cover border-4 border-gray-50 mb-3 shadow-sm" />
+                <h3 className="text-lg font-bold text-gray-800">{emp.hoten}</h3>
+                <p className="text-sm text-gray-500 font-medium">@{emp.username}</p>
+                <div className="mt-3">
+                  <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold">{emp.tenvaitro}</span>
                 </div>
-              );
-            })}
-          </div>
+              </div>
 
-          {filteredEmployees.length === 0 && (
-            <div className="text-center py-12 text-gray-500 bg-white rounded-2xl border border-gray-100 mt-6">
-              Không tìm thấy nhân viên nào.
-            </div>
-          )}
-        </>
-      )}
+              <div className="p-5 bg-gray-50/50 space-y-3">
+                <div className="flex items-center gap-3 text-sm text-gray-600"><span className="text-gray-400">📧</span><span className="truncate">{emp.email}</span></div>
+                <div className="flex items-center gap-3 text-sm text-gray-600"><span className="text-gray-400">📞</span><span>{emp.sdt}</span></div>
+              </div>
 
-      {viewMode === 'payroll' && (
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-          <h2 className="text-lg font-bold mb-4">Payroll - Phiếu lương</h2>
-          {payrollLoading ? (
-            <div className="text-gray-500">Đang tải dữ liệu bảng lương...</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Employee</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Gross Salary</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Social Insurance</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Personal Income Tax</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Net Salary</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {payrollData.map((r) => (
-                    <tr key={r.maphieu}>
-                      <td className="px-4 py-3 text-sm text-gray-700">
-                        <div className="font-medium">{r.hoten}</div>
-                        <div className="text-xs text-gray-400">#{r.manhanvien}</div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-700 text-right">{formatCurrency(r.luong)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700 text-right">{formatCurrency(r.tongbaohiemnv)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700 text-right">{formatCurrency(r.tongthuetncn)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700 text-right">{formatCurrency(r.thuclinh)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700">{r.trangthai}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {payrollData.length === 0 && (
-                <div className="text-center py-8 text-gray-500">Không tìm thấy phiếu lương cho tháng này.</div>
-              )}
+              <div className="px-5 py-4 bg-white border-t border-gray-100 flex justify-between items-center text-xs text-gray-500">
+                <span>Mã NV: #{emp.manhanvien}</span>
+                <span>Vào làm: {formatDate(emp.ngayvaolam)}</span>
+              </div>
             </div>
-          )}
+          );
+        })}
+      </div>
+
+      {filteredEmployees.length === 0 && (
+        <div className="text-center py-12 text-gray-500 bg-white rounded-2xl border border-gray-100 mt-6">
+          Không tìm thấy nhân viên nào.
         </div>
       )}
     </div>

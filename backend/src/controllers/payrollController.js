@@ -177,4 +177,44 @@ module.exports = {
       res.status(500).json({ error: 'Lỗi khi lấy phiếu lương', details: error.message });
     }
   }
+,
+  // GET /api/payroll/profile/:id  - lấy hồ sơ lương của 1 nhân viên
+  getSalaryProfile: async (req, res) => {
+    const id = req.params.id;
+    try {
+      const r = await db.query('SELECT * FROM HO_SO_LUONG WHERE MANHANVIEN = $1', [id]);
+      if (r.rows.length === 0) return res.json({ success: true, data: null });
+      return res.json({ success: true, data: r.rows[0] });
+    } catch (err) {
+      console.error('getSalaryProfile error:', err);
+      res.status(500).json({ error: 'Lỗi server khi lấy hồ sơ lương' });
+    }
+  },
+
+  // PUT /api/payroll/profile/:id  - tạo hoặc cập nhật hồ sơ lương cho nhân viên (PAYROLL role)
+  upsertSalaryProfile: async (req, res) => {
+    const id = req.params.id;
+    const { mucluong, songuoiphuthuoc, giamtru_banthan, tien_giam_npt } = req.body;
+    try {
+      await db.query('BEGIN');
+      const r = await db.query('SELECT MANHANVIEN FROM HO_SO_LUONG WHERE MANHANVIEN = $1', [id]);
+      if (r.rows.length > 0) {
+        await db.query(
+          `UPDATE HO_SO_LUONG SET MUCLUONG = COALESCE($1, MUCLUONG), SONGUOIPHUTHUOC = COALESCE($2, SONGUOIPHUTHUOC), GIAMTRUBANTHAN = COALESCE($3, GIAMTRUBANTHAN), TIENGIAMNPT = COALESCE($4, TIENGIAMNPT) WHERE MANHANVIEN = $5`,
+          [mucluong, songuoiphuthuoc, giamtru_banthan, tien_giam_npt, id]
+        );
+      } else {
+        await db.query(
+          `INSERT INTO HO_SO_LUONG (MANHANVIEN, MUCLUONG, SONGUOIPHUTHUOC, GIAMTRUBANTHAN, TIENGIAMNPT) VALUES ($1,$2,$3,$4,$5)`,
+          [id, mucluong || 0, songuoiphuthuoc || 0, giamtru_banthan || null, tien_giam_npt || null]
+        );
+      }
+      await db.query('COMMIT');
+      res.json({ success: true, message: 'Đã lưu hồ sơ lương' });
+    } catch (err) {
+      await db.query('ROLLBACK');
+      console.error('upsertSalaryProfile error:', err);
+      res.status(500).json({ error: 'Lỗi server khi lưu hồ sơ lương' });
+    }
+  }
 };

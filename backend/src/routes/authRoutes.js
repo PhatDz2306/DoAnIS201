@@ -4,9 +4,6 @@ const authController = require('../controllers/authController');
 const { verifyToken, checkPermission } = require('../middlewares/authMiddleware');
 // Route: POST /api/auth/login
 router.post('/login', authController.login);
-router.post('/register', authController.register);
-router.get('/employees', verifyToken, checkPermission('ALL'), authController.getAllEmployees);
-router.put('/employees/:id', authController.updateEmployee);
-router.delete('/employees/:id', authController.softDeleteEmployee);
+// Note: Employee management and registration handled by HR module (/api/hr)
 
 module.exports = router;

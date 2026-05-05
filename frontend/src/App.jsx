@@ -1,4 +1,4 @@
-import { Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom'
+import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from './context/authContext';
 import Login from './pages/login';
 import ProductManager from './pages/productManager'
@@ -8,6 +8,10 @@ import CustomerManager from './pages/customerManager';
 import EmployeeManager from './pages/employeeManager';
 import Dashboard from './pages/dashboardManager';
 import AttendanceManager from './pages/attendanceManager';
+import ModulesGrid from './pages/modulesGrid';
+import PayrollManager from './pages/payrollManager';
+import PendingLeaves from './pages/pendingLeaves';
+import WeeklyAttendance from './pages/weeklyAttendance';
 // Tạo một component ảo cho Dashboard để hiển thị tạm
 
 function App() {
@@ -16,6 +20,7 @@ function App() {
 
   // Lấy đường dẫn hiện tại để đổi tên Header cho linh hoạt
   const location = useLocation();
+  const navigate = useNavigate();
   const getHeaderTitle = () => {
     if (location.pathname.includes('/dashboard')) return 'Bảng Điều Khiển';
     if (location.pathname.includes('/products')) return 'Quản Lý Danh Mục Sản Phẩm';
@@ -70,144 +75,34 @@ function App() {
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      
-      {/* SIDEBAR - Cột Menu bên trái */}
-      <aside className="w-64 bg-slate-900 text-white flex flex-col shadow-2xl z-10">
-        <div className="p-6 text-2xl font-black border-b border-slate-700 tracking-wider">
-          🐾 PET ERP
-        </div>
-        
-        <nav className="flex-1 p-4 overflow-y-auto space-y-2">
-          
-          {/* DASHBOARD: Chỉ còn quyền ALL (Quản lý) mới thấy */}
-          {hasPermission('ALL') && (
-            <NavLink
-              to="/dashboard"
-              className={({ isActive }) =>
-                `w-full flex items-center px-4 py-3 rounded-xl transition-all font-medium ${
-                  isActive ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-800'
-                }`
-              }
-            >
-              📊 Tổng Quan (Dashboard)
-            </NavLink>
-          )}
-
-          {/* QUẢN LÝ SẢN PHẨM: Quyền INVENTORY */}
-          {hasPermission('INVENTORY') && (
-            <NavLink
-              to="/products"
-              className={({ isActive }) =>
-                `w-full flex items-center px-4 py-3 rounded-xl transition-all font-medium ${
-                  isActive ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-800'
-                }`
-              }
-            >
-              📦 Quản lý Sản phẩm
-            </NavLink>
-          )}
-          
-          {/* QUẢN LÝ TỒN KHO: Quyền INVENTORY */}
-          {hasPermission('INVENTORY') && (
-            <NavLink
-              to="/inventory"
-              className={({ isActive }) =>
-                `w-full flex items-center px-4 py-3 rounded-xl transition-all font-medium ${
-                  isActive ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-800'
-                }`
-              }
-            >
-              🏢 Quản lý Tồn Kho
-            </NavLink>
-          )}
-
-          {/* POS: Quyền POS */}
-          {hasPermission('POS') && (
-            <NavLink
-              to="/pos"
-              className={({ isActive }) =>
-                `w-full flex items-center px-4 py-3 rounded-xl transition-all font-medium ${
-                  isActive ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-800'
-                }`
-              }
-            >
-              🛒 Bán Hàng (POS)
-            </NavLink>
-          )}
-
-          {/* CHẤM CÔNG: Hiển thị cho tất cả */}
-          <NavLink
-            to="/attendance"
-            className={({ isActive }) =>
-              `w-full flex items-center px-4 py-3 rounded-xl transition-all font-medium ${
-                isActive ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-800'
-              }`
-            }
-          >
-            ⏱️ Chấm công
-          </NavLink>
-
-          {/* NHÂN SỰ: Quyền ALL */}
-          {hasPermission('ALL') && (
-            <NavLink
-              to="/employees"
-              className={({ isActive }) =>
-                `w-full flex items-center px-4 py-3 rounded-xl transition-all font-medium ${
-                  isActive ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-800'
-                }`
-              }
-            >
-              👥 Quản lý Nhân sự
-            </NavLink>
-          )}
-
-          {/* KHÁCH HÀNG: Quyền CUSTOMER */}
-          {hasPermission('CUSTOMER') && (
-            <NavLink
-              to="/customers"
-              className={({ isActive }) =>
-                `w-full flex items-center px-4 py-3 rounded-xl transition-all font-medium ${
-                  isActive ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-800'
-                }`
-              }
-            >
-              👥 Khách Hàng & Thú Cưng
-            </NavLink>
-          )}
-
-        </nav>
-
-        <div className="p-4 border-t border-slate-700">
-          <button 
-            onClick={logout} 
-            className="w-full px-4 py-3 bg-slate-800 hover:bg-red-500 text-white rounded-xl transition-colors font-semibold"
-          >
-            Đăng xuất
-          </button>
-        </div>
-      </aside>
+      {/* Left sidebar removed per request; logout placed in header */}
 
       {/* KHU VỰC NỘI DUNG CHÍNH - Bên phải */}
       <div className="flex-1 flex flex-col h-screen relative">
         
         <header className="h-20 bg-white/80 backdrop-blur-md shadow-sm px-8 flex justify-between items-center border-b border-gray-200 z-10">
+            <div className="mr-4">
+              <button onClick={() => navigate('/modules')} className="px-3 py-2 bg-indigo-600 text-white rounded-xl">◀ Modules</button>
+            </div>
           <h2 className="text-2xl font-bold text-gray-800">
             {getHeaderTitle()}
           </h2>
           
-          <div className="flex items-center space-x-4 cursor-pointer">
+          <div className="flex items-center space-x-4">
             <div className="text-right">
               <p className="text-sm font-bold text-gray-800">{user.hoTen}</p>
               <p className="text-xs text-indigo-600 font-semibold">{user.tenVaiTro}</p>
             </div>
             <div className="w-12 h-12 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-full border-2 border-white shadow-md"></div>
+            <button onClick={logout} className="ml-4 px-3 py-2 bg-red-500 text-white rounded-xl">Đăng xuất</button>
           </div>
         </header>
 
         <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-50">
           <Routes>
-            {/* Khi login vào "/", đá văng về đúng màn hình làm việc của từng người */}
-            <Route path="/" element={<Navigate to={getDefaultRoute()} replace />} />
+            {/* Khi login vào "/", hiển thị trang Modules grid */}
+            <Route path="/" element={<Navigate to={'/modules'} replace />} />
+            <Route path="/modules" element={<ModulesGrid />} />
             
             {/* Nếu cố tình gõ link bậy bạ, đá văng về getDefaultRoute() thay vì /dashboard như trước */}
             <Route path="/dashboard" element={hasPermission('ALL') ? <Dashboard /> : <Navigate to={getDefaultRoute()} replace />} />
@@ -217,6 +112,9 @@ function App() {
             <Route path="/customers" element={hasPermission('CUSTOMER') ? <CustomerManager /> : <Navigate to={getDefaultRoute()} replace />} />
             <Route path="/employees" element={hasPermission('ALL') ? <EmployeeManager /> : <Navigate to={getDefaultRoute()} replace />} />
             <Route path="/attendance" element={<AttendanceManager />} />
+            <Route path="/payroll" element={hasPermission('PAYROLL') || hasPermission('ALL') ? <PayrollManager /> : <Navigate to={getDefaultRoute()} replace />} />
+            <Route path="/hr/leaves/pending" element={hasPermission('ALL') ? <PendingLeaves /> : <Navigate to={getDefaultRoute()} replace />} />
+            <Route path="/hr/attendance/weekly" element={hasPermission('ALL') ? <WeeklyAttendance /> : <Navigate to={getDefaultRoute()} replace />} />
           </Routes>
         </main>
       </div>
